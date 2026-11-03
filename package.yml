@@ -1,0 +1,18 @@
+package: community.lazycat.app.sparkyfitness
+name: SparkyFitness
+version: 0.0.0
+description: "Self-hosted fitness and nutrition tracker: log workouts, meals and body metrics, with goals, reports and optional AI assistance."
+min_os_version: "1.5.0"
+homepage: https://github.com/CodeWithCJ/SparkyFitness
+author: codewithcj
+license: MIT
+permissions:
+  required:
+    - net.internet
+locales:
+  zh:
+    name: SparkyFitness
+    description: "自托管健身与营养追踪：记录训练、饮食与身体指标，支持目标、报表与可选的 AI 辅助。"
+  en:
+    name: SparkyFitness
+    description: "Self-hosted fitness and nutrition tracker: log workouts, meals and body metrics, with goals, reports and optional AI assistance."

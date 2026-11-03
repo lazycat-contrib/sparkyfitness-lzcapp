@@ -1,0 +1,94 @@
+application:
+  subdomain: sparkyfitness
+  multi_instance: false
+  # The app ships its own account system (sign-up / sign-in), so it is exposed
+  # directly and authenticates users itself.
+  public_path:
+    - /
+  upstreams:
+    # Only the frontend (nginx) is published; it proxies /api to the backend
+    # over the internal network.
+    - location: /
+      backend: http://frontend:80/
+
+services:
+  db:
+    image: docker.1ms.run/library/postgres:18.3-alpine
+    environment:
+      - POSTGRES_USER=sparky
+      - POSTGRES_PASSWORD={{ stable_secret "db_password" }}
+      - POSTGRES_DB=sparkyfitness_db
+    binds:
+      # PostgreSQL 18 keeps its data directly under /var/lib/postgresql
+      # (the <= 17 layout used /var/lib/postgresql/data).
+      - /lzcapp/var/db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sparky -d sparkyfitness_db"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  server:
+    # upstream: codewithcj/sparkyfitness_server:v1.11.0
+    image: docker.1ms.run/codewithcj/sparkyfitness_server:v1.11.0
+    environment:
+      - SPARKY_FITNESS_DB_HOST=db
+      - SPARKY_FITNESS_DB_PORT=5432
+      - SPARKY_FITNESS_DB_NAME=sparkyfitness_db
+      - SPARKY_FITNESS_DB_USER=sparky
+      - SPARKY_FITNESS_DB_PASSWORD={{ stable_secret "db_password" }}
+      - SPARKY_FITNESS_APP_DB_USER=sparky
+      - SPARKY_FITNESS_APP_DB_PASSWORD={{ stable_secret "db_password" }}
+      # Encrypts stored integration credentials / API config.
+      - SPARKY_FITNESS_API_ENCRYPTION_KEY={{ stable_secret "api_encryption_key" }}
+      # Signs auth sessions; must stay stable or everyone is signed out.
+      - BETTER_AUTH_SECRET={{ stable_secret "better_auth_secret" }}
+      - SPARKY_FITNESS_FRONTEND_URL=https://{{ .S.AppDomain }}
+      - SPARKY_FITNESS_SERVER_PORT=3010
+      - TZ=Asia/Shanghai
+    binds:
+      - /lzcapp/var/backup:/app/SparkyFitnessServer/backup
+      - /lzcapp/var/uploads:/app/SparkyFitnessServer/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3010/api/health',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 90s
+    depends_on:
+      - db
+
+  frontend:
+    # upstream: codewithcj/sparkyfitness:v1.11.0
+    image: docker.1ms.run/codewithcj/sparkyfitness:v1.11.0
+    environment:
+      # Must be the backend SERVICE NAME: inside this nginx container "localhost"
+      # points at the frontend itself and every API call would return 502.
+      - SPARKY_FITNESS_SERVER_HOST=server
+      - SPARKY_FITNESS_SERVER_PORT=3010
+      - NGINX_LISTEN_PORT=80
+      - PUID=1000
+      - GUID=1000
+      - TZ=Asia/Shanghai
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:80/ || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+    depends_on:
+      - server
+
+usage: |
+  SparkyFitness 是自托管的健身与营养追踪器：记录训练、饮食和身体指标，
+  设定目标并查看报表，可选接入 AI 做辅助建议。
+
+  - 首次访问用邮箱和密码注册即可；应用自带账号体系，所以它直接对外开放
+    （public_path），登录与权限都由应用自己负责。**注册不需要邮箱验证**，
+    因此未配置邮件服务也能正常建号使用。
+  - 后台由 PostgreSQL 组成（前端 nginx + Node 后端 + 数据库三个服务均在应用内部），
+    不需要你另外准备数据库。
+  - 未接入 Garmin 等第三方健康数据服务；如需同步手表数据请自行另配。
+  - 未做真机验证：注册登录、记录训练与饮食、报表展示以及重启后数据留存
+    均未在设备上实测。
